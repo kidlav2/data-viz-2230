@@ -209,7 +209,6 @@ function FontStyle() {
       }
 
       .kpi-card:hover {
-        transform: translateY(-2px);
         box-shadow: 0 8px 24px rgba(74,140,114,0.15) !important;
       }
       .story-card:hover {
