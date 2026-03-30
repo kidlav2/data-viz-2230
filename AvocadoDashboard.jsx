@@ -137,8 +137,8 @@ function fmtBig(n) {
   return n.toLocaleString()
 }
 function fmtPrice(n)     { return `$${Number(n).toFixed(2)}` }
-function fmtPriceAxis(n) { return `$${Number(n).toFixed(1)}` }
-function fmtVolAxis(n)   { return `${(n / 1e6).toFixed(0)}M` }
+function fmtPriceAxis(n) { return `$${parseFloat(Number(n).toFixed(2))}` }
+function fmtVolAxis(n)   { return `${parseFloat((n / 1e6).toFixed(1))}M` }
 
 function lerpColor(hexA, hexB, t) {
   const p = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]
@@ -209,7 +209,6 @@ function FontStyle() {
       }
 
       .kpi-card:hover {
-        box-shadow: 0 8px 24px rgba(74,140,114,0.15) !important;
       }
       .story-card:hover {
         transform: translateY(-3px);
@@ -345,6 +344,11 @@ function FontStyle() {
 // ============================================================
 // TOOLTIPS
 // ============================================================
+function capitalize(str) {
+  if (!str) return str
+  return str.charAt(0).toUpperCase() + str.slice(1)
+}
+
 function PriceTrendTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   const sortedPayload = [...payload].sort((a, b) => Number(b.value) - Number(a.value))
@@ -352,7 +356,7 @@ function PriceTrendTooltip({ active, payload, label }) {
     <div style={tooltipStyle}>
       <p style={{ fontWeight: 700, marginBottom: 6 }}>{label}</p>
       {sortedPayload.map((p, i) => (
-        <p key={i} style={{ color: p.color, margin: '2px 0' }}>{p.name}: {fmtPrice(p.value)}</p>
+        <p key={i} style={{ color: p.color, margin: '2px 0' }}>{capitalize(p.name)}: {fmtPrice(p.value)}</p>
       ))}
     </div>
   )
@@ -365,7 +369,7 @@ function VolShareTooltip({ active, payload, label }) {
     <div style={tooltipStyle}>
       <p style={{ fontWeight: 700, marginBottom: 6 }}>{label}</p>
       {sortedPayload.map((p, i) => (
-        <p key={i} style={{ color: p.color, margin: '2px 0' }}>{p.name}: {Number(p.value).toFixed(2)}%</p>
+        <p key={i} style={{ color: p.color, margin: '2px 0' }}>{capitalize(p.name)}: {Number(p.value).toFixed(2)}%</p>
       ))}
     </div>
   )
@@ -392,11 +396,16 @@ function SeasonalityTooltip({ active, payload, label }) {
   return (
     <div style={tooltipStyle}>
       <p style={{ fontWeight: 700, marginBottom: 6 }}>{label}{note}</p>
-      {sortedPayload.map((p, i) => (
-        <p key={i} style={{ color: p.color || COLORS.text, margin: '2px 0' }}>
-          {p.name}: {p.dataKey === 'avg_price' ? fmtPrice(p.value) : `${(p.value / 1e6).toFixed(1)}M`}
-        </p>
-      ))}
+      {sortedPayload.map((p, i) => {
+        const color = p.dataKey === 'avg_volume'
+          ? (label === 'Feb' ? COLORS.conventional : COLORS.organic)
+          : (p.color || COLORS.text)
+        return (
+          <p key={i} style={{ color, margin: '2px 0' }}>
+            {p.dataKey === 'avg_price' ? 'Avg price' : p.dataKey === 'avg_volume' ? 'Avg volume' : capitalize(p.name)}: {p.dataKey === 'avg_price' ? fmtPrice(p.value) : `${(p.value / 1e6).toFixed(1)}M`}
+          </p>
+        )
+      })}
     </div>
   )
 }
@@ -459,7 +468,7 @@ function KpiCard({ label, value, sublabel, accentColor, tooltip }) {
   return (
     <div
       className="kpi-card"
-      style={{ ...cardStyle, padding: 'clamp(14px, 2vw, 20px) clamp(16px, 2.5vw, 24px)', borderLeft: `4px solid ${accentColor}`, position: 'relative', overflow: 'visible' }}
+      style={{ ...cardStyle, padding: 'clamp(14px, 2vw, 20px) clamp(16px, 2.5vw, 24px)', borderLeft: `4px solid ${accentColor}`, position: 'relative', overflow: 'visible', cursor: 'default' }}
       onMouseEnter={(e) => {
         setHovered(true)
         requestAnimationFrame(() => positionTooltip(e.clientX, e.clientY))
@@ -823,7 +832,7 @@ function Breadcrumb({ activePage, onBack }) {
       background: COLORS.card,
     }}>
       <button className="back-btn" onClick={onBack}>Dashboard</button>
-      <span style={{ color: COLORS.border }}>›</span>
+      <span style={{ color: COLORS.subtext }}>/</span>
       <span style={{ color: COLORS.text, fontWeight: 500 }}>{STORY_TITLES[activePage]}</span>
     </div>
   )
@@ -884,7 +893,19 @@ function Story2MiniChart({ height = 130, featured = false }) {
           type="category" dataKey="regionShort"
           tick={axisTick} axisLine={false} tickLine={false} width={yAxisWidth}
         />
-        <Tooltip isAnimationActive={false} cursor={false} />
+        <Tooltip
+          isAnimationActive={false}
+          cursor={false}
+          content={({ active, payload, label }) => {
+            if (!active || !payload?.length) return null
+            return (
+              <div style={tooltipStyle}>
+                <p style={{ fontWeight: 700, marginBottom: 6 }}>{label}</p>
+                <p style={{ margin: '2px 0' }}>Avg price: {fmtPrice(payload[0].value)}</p>
+              </div>
+            )
+          }}
+        />
         <Bar dataKey="AveragePrice" fill={COLORS.accent} radius={[0, 3, 3, 0]} />
       </BarChart>
     </ResponsiveContainer>
@@ -1183,21 +1204,17 @@ function Story1Page({ setActivePage }) {
   )
 
   const xTicks = useMemo(() => {
-    if (selectedYear !== 'All') {
-      return filteredTrend.map(d => d.year_month)
-    }
-
-    const seen = new Set()
-    return filteredTrend
-      .filter(d => { const y = d.year_month.slice(0,4); if (seen.has(y)) return false; seen.add(y); return true })
-      .map(d => d.year_month)
-  }, [filteredTrend, selectedYear])
+    return filteredTrend.map(d => d.year_month)
+  }, [filteredTrend])
 
   const xTickFormatter = useCallback((value) => {
-    if (selectedYear === 'All') return value.slice(0, 4)
-
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     const monthIndex = Number(value.slice(5, 7)) - 1
+
+    if (selectedYear === 'All') {
+      return value.slice(5, 7) === '01' ? value.slice(0, 4) : ''
+    }
+
     return monthNames[monthIndex] || value
   }, [selectedYear])
 
@@ -1250,7 +1267,7 @@ function Story1Page({ setActivePage }) {
             <ResponsiveContainer width="100%" height={380}>
               <LineChart data={filteredTrend} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={COLORS.muted} />
-                <XAxis dataKey="year_month" ticks={xTicks} tickFormatter={xTickFormatter} style={{ fontSize: 12 }} />
+                <XAxis dataKey="year_month" ticks={xTicks} tickFormatter={xTickFormatter} tickLine={{ stroke: COLORS.subtext, strokeWidth: 1 }} interval={0} style={{ fontSize: 12 }} />
                 <YAxis domain={[0.7, 2.2]} tickFormatter={fmtPriceAxis} style={{ fontSize: 12 }} />
                 <Tooltip content={<PriceTrendTooltip />} isAnimationActive={false} />
                 <Legend content={() => (
@@ -1644,6 +1661,15 @@ function Story3Page({ setActivePage }) {
     })
   }, [selectedYear])
 
+  const yLeftMax = useMemo(() => {
+    // В режиме 'All' потолок строго 25M, чтобы не было пустой дыры наверху
+    if (selectedYear === 'All') return 25000000
+    
+    // В единичных годах: потолок 5M. Если бар перевалил за 5M (например, февраль 5.6M), то потолок будет 6M.
+    const maxVol = Math.max(...seasonalityDataForYear.map(d => d.avg_volume))
+    return maxVol > 5000000 ? 6000000 : 5000000
+  }, [selectedYear, seasonalityDataForYear])
+
   return (
     <div>
       <Breadcrumb activePage="story3" onBack={() => setActivePage('dashboard')} />
@@ -1691,8 +1717,8 @@ function Story3Page({ setActivePage }) {
             <ComposedChart data={seasonalityDataForYear} margin={{ top: 20, right: 60, left: 20, bottom: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={COLORS.muted} />
               <XAxis dataKey="monthName" style={{ fontSize: 12 }} />
-              <YAxis yAxisId="left"  tickFormatter={fmtVolAxis}   style={{ fontSize: 12 }} />
-              <YAxis yAxisId="right" orientation="right" domain={[1.0, 1.7]} tickFormatter={fmtPriceAxis} style={{ fontSize: 12 }} />
+              <YAxis yAxisId="left" domain={[0, yLeftMax]} tickCount={6} tickFormatter={fmtVolAxis} style={{ fontSize: 12 }} />
+              <YAxis yAxisId="right" orientation="right" domain={[0.8, 1.8]} tickCount={6} tickFormatter={fmtPriceAxis} style={{ fontSize: 12 }} />
               <Tooltip content={<SeasonalityTooltip />} isAnimationActive={false} />
               <Legend content={() => (
                 <ToggleLegend
